@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Painel de Ajuda</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
+        .alerta { background-color: #fff; border-left: 5px solid red; padding: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .alerta strong { color: #333; }
+        .btn-confirmar { margin-top: 10px; background-color: #28a745; color: white; border: none; padding: 8px 12px; cursor: pointer; }
+        .btn-confirmar:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Painel com Filtros</h1>
+
+    <!-- Filtros -->
+    <label>Funcionário:</label>
+    <select id="filtroFuncionario">
+        <option value="">Todos</option>
+    </select>
+
+    <label>Ação:</label>
+    <select id="filtroAcao">
+        <option value="">Todas</option>
+    </select>
+
+    <label>Período:</label>
+    <select id="filtroHora">
+        <option value="">Todos</option>
+        <option value="manha">Manhã (00h–12h)</option>
+        <option value="tarde">Tarde (12h–18h)</option>
+        <option value="noite">Noite (18h–00h)</option>
+    </select>
+
+<h2>📊 Monitoramento por Funcionário</h2>
+
+<label for="acaoGrafico">Ação no gráfico:</label>
+<select id="acaoGrafico">
+    <option value="Solicitando ajuda">Solicitando ajuda</option>
+    <option value="Trabalhando">Trabalhando</option>
+    <option value="Ocioso">Ocioso</option>
+    <option value="Caminhando">Caminhando</option>
+</select>
+
+<canvas id="graficoBarras" style="max-width: 600px;"></canvas>
+
+<h2>🍕 Distribuição das Ações</h2>
+<canvas id="graficoPizza" style="max-width: 500px;"></canvas>
+
+<div id="indicadores" style="display: flex; gap: 20px; margin-bottom: 20px;">
+    <div id="kpi-funcionarios">👥 Funcionários: --</div>
+    <div id="kpi-duracao">⏱️ Tempo total monitorado: --</div>
+    <div id="kpi-ajuda">🚨 Ajuda: --</div>
+    <div id="kpi-ociosidade">😴 Ociosos: --</div>
+    <div id="kpi-eficiencia">💼 Eficientes: --</div>
+</div>
+
+<h2>⏱️ Alertas por Hora</h2>
+<canvas id="graficoLinha" style="max-width: 600px;"></canvas>
+
+
+<h2>📚 Ações por Funcionário (Barras Empilhadas)</h2>
+<canvas id="graficoEmpilhado" style="max-width: 800px;"></canvas>
+
+<h2>📡 Perfil de Ações por Funcionário</h2>
+<canvas id="graficoRadar" style="max-width: 600px;"></canvas>
+
+
+<h2>📈 Evolução Temporal dos Alertas</h2>
+<canvas id="graficoTempo" style="max-width: 700px;"></canvas>
+
+<h2>📊 Evolução Empilhada das Ações</h2>
+<canvas id="graficoArea" style="max-width: 800px;"></canvas>
+
+<h2>🔍 Análise de Pareto das Ações</h2>
+<canvas id="graficoPareto" style="max-width: 700px;"></canvas>
+
+<h2>🎯 Dispersão: Duração vs. Tipo de Ação</h2>
+<canvas id="graficoDispersao" style="max-width: 700px;"></canvas>
+
+
+
+
+
+
+
+
+
+    <div id="alertas"></div>
+
+
+
+
+    <script>
+    let dadosBrutos = [];
+
+    function extrairHora(timestamp) {
+        const hora = new Date(timestamp).getHours();
+        if (hora < 12) return "";
+        else if (hora < 18) return "tarde";
+        else return "noite";
+    }
+
+    function carregarDados() {
+        fetch('/dados')
+            .then(res => res.json())
+            .then(dados => {
+                dadosBrutos = dados;
+                aplicarFiltros();
+            });
+    }
+
+    
+    function gerarGraficoPizza() {
+    const contagem = {
+        "Solicitando ajuda": 0,
+        "Trabalhando": 0,
+        "Ocioso": 0,
+        "Caminhando": 0
+    };
+
+    dadosBrutos.forEach(e => {
+        if (contagem[e.acao] !== undefined) {
+            contagem[e.acao]++;
+        }
+    });
+
+    const tipos = Object.keys(contagem);
+    const valores = Object.values(contagem);
+    const cores = ["#ff4d4d", "#28a745", "#ffc107", "#17a2b8"];
+
+    const ctx = document.getElementById('graficoPizza').getContext('2d');
+    if (window.pizzaGrafico) window.pizzaGrafico.destroy();
+    window.pizzaGrafico = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: tipos,
+            datasets: [{
+                data: valores,
+                backgroundColor: cores
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+function gerarGraficoLinha() {
+    const porHora = {};
+
+    // Inicializa mapa de horas para cada ação
+    for (let i = 0; i < 24; i++) {
+        porHora[i] = {
+            "Solicitando ajuda": 0,
+            "Trabalhando": 0,
+            "Ocioso": 0,
+            "Caminhando": 0
+        };
+    }
+
+    dadosBrutos.forEach(e => {
+        const hora = new Date(e.timestamp).getHours();
+        if (porHora[hora] && porHora[hora][e.acao] !== undefined) {
+            porHora[hora][e.acao]++;
+        }
+    });
+
+    const horas = [...Array(24).keys()].map(h => `${h}:00`);
+    const acoes = ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"];
+    const cores = {
+        "Solicitando ajuda": "#dc3545",  // vermelho
+        "Trabalhando": "#28a745",        // verde
+        "Ocioso": "#ffc107",             // amarelo
+        "Caminhando": "#17a2b8"          // azul suave
+    };
+
+    const datasets = acoes.map(acao => ({
+        label: acao,
+        data: [...Array(24).keys()].map(h => porHora[h][acao]),
+        borderColor: cores[acao],
+        backgroundColor: cores[acao] + "33", // transparência
+        tension: 0.3
+    }));
+
+    const ctx = document.getElementById('graficoLinha').getContext('2d');
+    if (window.linhaGrafico) window.linhaGrafico.destroy();
+    window.linhaGrafico = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: horas,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: 'Distribuição de Ações por Hora'
+                }
+            },
+            scales: {
+                y: { 
+                    beginAtZero: true 
+                }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoEmpilhado() {
+    const mapa = {};
+
+    dadosBrutos.forEach(e => {
+        const nome = e.funcionario;
+        if (!mapa[nome]) {
+            mapa[nome] = {
+                "Solicitando ajuda": 0,
+                "Trabalhando": 0,
+                "Ocioso": 0,
+                "Caminhando": 0
+            };
+        }
+        if (mapa[nome][e.acao] !== undefined) {
+            mapa[nome][e.acao]++;
+        }
+    });
+
+    const funcionarios = Object.keys(mapa);
+    const acoes = ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"];
+    const cores = {
+        "Solicitando ajuda": "#dc3545",
+        "Trabalhando": "#28a745",
+        "Ocioso": "#ffc107",
+        "Caminhando": "#17a2b8"
+    };
+
+    const datasets = acoes.map(acao => ({
+        label: acao,
+        data: funcionarios.map(f => mapa[f][acao]),
+        backgroundColor: cores[acao]
+    }));
+
+    const ctx = document.getElementById('graficoEmpilhado').getContext('2d');
+    if (window.empilhadoGrafico) window.empilhadoGrafico.destroy();
+    window.empilhadoGrafico = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: funcionarios,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Distribuição das Ações por Funcionário'
+                },
+                legend: { position: 'bottom' }
+            },
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoRadar() {
+    const mapa = {};
+
+    dadosBrutos.forEach(e => {
+        const nome = e.funcionario;
+        if (!mapa[nome]) {
+            mapa[nome] = {
+                "Solicitando ajuda": 0,
+                "Trabalhando": 0,
+                "Ocioso": 0,
+                "Caminhando": 0
+            };
+        }
+        if (mapa[nome][e.acao] !== undefined) {
+            mapa[nome][e.acao]++;
+        }
+    });
+
+    const funcionarios = Object.keys(mapa).slice(0, 5); // seleciona os 5 primeiros
+    const coresBase = ["#ff4d4d", "#28a745", "#ffc107", "#17a2b8", "#6f42c1"];
+
+    const datasets = funcionarios.map((f, i) => ({
+        label: f,
+        data: [
+            mapa[f]["Solicitando ajuda"],
+            mapa[f]["Trabalhando"],
+            mapa[f]["Ocioso"],
+            mapa[f]["Caminhando"]
+        ],
+        borderColor: coresBase[i],
+        backgroundColor: coresBase[i] + "33",
+        fill: true
+    }));
+
+    const ctx = document.getElementById('graficoRadar').getContext('2d');
+    if (window.radarGrafico) window.radarGrafico.destroy();
+    window.radarGrafico = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"],
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'top' },
+                title: {
+                    display: true,
+                    text: 'Perfil Comportamental dos Funcionários'
+                }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoTemporal() {
+    const historico = {};
+
+    dadosBrutos.forEach(e => {
+        const ts = new Date(e.timestamp);
+        const minuto = ts.getHours().toString().padStart(2, '0') + ':' + ts.getMinutes().toString().padStart(2, '0');
+        
+        if (!historico[minuto]) {
+            historico[minuto] = {
+                "Solicitando ajuda": 0,
+                "Trabalhando": 0,
+                "Ocioso": 0,
+                "Caminhando": 0
+            };
+        }
+
+        if (historico[minuto][e.acao] !== undefined) {
+            historico[minuto][e.acao]++;
+        }
+    });
+
+    const minutosOrdenados = Object.keys(historico).sort();
+    const acoes = ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"];
+    const cores = {
+        "Solicitando ajuda": "#dc3545",
+        "Trabalhando": "#28a745",
+        "Ocioso": "#ffc107",
+        "Caminhando": "#17a2b8"
+    };
+
+    const datasets = acoes.map(acao => ({
+        label: acao,
+        data: minutosOrdenados.map(m => historico[m][acao]),
+        borderColor: cores[acao],
+        backgroundColor: cores[acao] + "33",
+        tension: 0.3
+    }));
+
+    const ctx = document.getElementById('graficoTempo').getContext('2d');
+    if (window.tempoGrafico) window.tempoGrafico.destroy();
+    window.tempoGrafico = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: minutosOrdenados,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: 'Evolução Temporal das Ações por Minuto'
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxTicksLimit: 20
+                    }
+                },
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoAreaEmpilhada() {
+    const dadosPorMinuto = {};
+
+    dadosBrutos.forEach(e => {
+        const ts = new Date(e.timestamp);
+        const minuto = ts.getHours().toString().padStart(2, '0') + ':' + ts.getMinutes().toString().padStart(2, '0');
+
+        if (!dadosPorMinuto[minuto]) {
+            dadosPorMinuto[minuto] = {
+                "Solicitando ajuda": 0,
+                "Trabalhando": 0,
+                "Ocioso": 0,
+                "Caminhando": 0
+            };
+        }
+
+        if (dadosPorMinuto[minuto][e.acao] !== undefined) {
+            dadosPorMinuto[minuto][e.acao]++;
+        }
+    });
+
+    const minutosOrdenados = Object.keys(dadosPorMinuto).sort();
+    const acoes = ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"];
+    const cores = {
+        "Solicitando ajuda": "#dc3545",
+        "Trabalhando": "#28a745",
+        "Ocioso": "#ffc107",
+        "Caminhando": "#17a2b8"
+    };
+
+    const datasets = acoes.map(acao => ({
+        label: acao,
+        data: minutosOrdenados.map(m => dadosPorMinuto[m][acao]),
+        backgroundColor: cores[acao] + "66",
+        borderColor: cores[acao],
+        fill: true,
+        tension: 0.3
+    }));
+
+    const ctx = document.getElementById('graficoArea').getContext('2d');
+    if (window.areaGrafico) window.areaGrafico.destroy();
+    window.areaGrafico = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: minutosOrdenados,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: 'Evolução Empilhada das Ações por Minuto'
+                }
+            },
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoPareto() {
+    const contagem = {};
+
+    dadosBrutos.forEach(e => {
+        contagem[e.acao] = (contagem[e.acao] || 0) + 1;
+    });
+
+    // Ordena ações por frequência
+    const ordenadas = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
+
+    const labels = ordenadas.map(([acao]) => acao);
+    const valores = ordenadas.map(([_, qtd]) => qtd);
+
+    // Calcula porcentagens acumuladas para curva de Pareto
+    const total = valores.reduce((a, b) => a + b, 0);
+    const acumuladas = [];
+    let soma = 0;
+    valores.forEach(v => {
+        soma += v;
+        acumuladas.push(((soma / total) * 100).toFixed(1));
+    });
+
+    const ctx = document.getElementById('graficoPareto').getContext('2d');
+    if (window.paretoGrafico) window.paretoGrafico.destroy();
+    window.paretoGrafico = new Chart(ctx, {
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Quantidade',
+                    data: valores,
+                    backgroundColor: '#007bff',
+                    yAxisID: 'y'
+                },
+                {
+                    type: 'line',
+                    label: 'Acumulado (%)',
+                    data: acumuladas,
+                    borderColor: '#dc3545',
+                    backgroundColor: '#dc354533',
+                    yAxisID: 'y1',
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: 'Distribuição de Registros por Ação (Pareto)'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    position: 'left',
+                    title: { display: true, text: 'Quantidade' }
+                },
+                y1: {
+                    beginAtZero: true,
+                    position: 'right',
+                    title: { display: true, text: 'Acumulado (%)' },
+                    ticks: { max: 100, callback: val => val + '%' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+
+
+function gerarGraficoDispersao() {
+    const cores = {
+        "Solicitando ajuda": "#dc3545",
+        "Trabalhando": "#28a745",
+        "Ocioso": "#ffc107",
+        "Caminhando": "#17a2b8"
+    };
+
+    const acoes = ["Solicitando ajuda", "Trabalhando", "Ocioso", "Caminhando"];
+    const datasets = acoes.map(acao => {
+        return {
+            label: acao,
+            data: [],
+            backgroundColor: cores[acao]
+        };
+    });
+
+    dadosBrutos.forEach(e => {
+        const tempoSegundos = (parseInt(e.duracao) * 60) / 1000;
+        const index = acoes.indexOf(e.acao);
+        if (index !== -1) {
+            datasets[index].data.push({ x: new Date(e.timestamp), y: tempoSegundos });
+        }
+
+        if (index !== -1 && e.duracao && parseInt(e.duracao) > 0) {
+            datasets[index].data.push({ x: new Date(e.timestamp), y: tempoSegundos });
+        }
+
+    });
+
+    const ctx = document.getElementById('graficoDispersao').getContext('2d');
+    if (window.dispersaoGrafico) window.dispersaoGrafico.destroy();
+    window.dispersaoGrafico = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: 'Dispersão de Duração por Tipo de Ação'
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'minute'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Hora do Registro'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Duração (segundos)'
+                    },
+                    beginAtZero: true,
+                    min: 0,
+                    max: 5
+                }
+                
+
+
+
+            }
+        }
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+    function atualizarDados() {
+        fetch('/dados')
+            .then(response => response.json())
+            .then(data => {
+                dadosBrutos = data;
+                aplicarFiltros();  // mantém filtros já escolhidos
+            });
+    }
+
+  function atualizarFiltros(data) {
+    const funcionarios = new Set();
+    const acoes = new Set();
+
+    data.forEach(e => {
+        funcionarios.add(e.funcionario);
+        acoes.add(e.acao);
+    });
+
+    const funcionarioSelect = document.getElementById('filtroFuncionario');
+    const acaoSelect = document.getElementById('filtroAcao');
+
+    // Preenche o menu de funcionários corretamente
+    funcionarioSelect.innerHTML = '<option value="">Todos</option>';
+    funcionarios.forEach(f => {
+        funcionarioSelect.innerHTML += `<option value="${f}">${f}</option>`;
+    });
+
+    // Preenche o menu de ações corretamente
+    acaoSelect.innerHTML = '<option value="">Todas</option>';
+    acoes.forEach(a => {
+        acaoSelect.innerHTML += `<option value="${a}">${a}</option>`;
+    });
+}
+
+function atualizarIndicadores() {
+    const mapa = {};  // contador por funcionário
+    let duracaoTotal = 0;
+
+    dadosBrutos.forEach(e => {
+        const nome = e.funcionario;
+        duracaoTotal += parseInt(e.duracao);
+
+        if (!mapa[nome]) {
+            mapa[nome] = { ajuda: 0, ocioso: 0, caminhando: 0, trabalhando: 0 };
+        }
+
+        if (e.acao === "Solicitando ajuda") mapa[nome].ajuda++;
+        if (e.acao === "Ocioso") mapa[nome].ocioso++;
+        if (e.acao === "Caminhando") mapa[nome].caminhando++;
+        if (e.acao === "Trabalhando") mapa[nome].trabalhando++;
+    });
+
+    const funcionarios = Object.keys(mapa);
+    const ajuda = funcionarios.filter(f => mapa[f].ajuda > 10).length;
+    const ociosos = funcionarios.filter(f => (mapa[f].ocioso + mapa[f].caminhando) > 10).length;
+    const eficientes = funcionarios.filter(f => mapa[f].trabalhando > 10).length;
+
+    const tempoSeg = (duracaoTotal * 60) / 1000;
+    const minutos = Math.floor(tempoSeg / 60);
+    const segundos = Math.floor(tempoSeg % 60);
+
+    document.getElementById("kpi-funcionarios").innerText = `👥 Funcionários: ${funcionarios.length}`;
+    document.getElementById("kpi-duracao").innerText = `⏱️ Tempo total: ${minutos}min ${segundos}s`;
+    document.getElementById("kpi-ajuda").innerText = `🚨 Ajuda: ${ajuda}`;
+    document.getElementById("kpi-ociosidade").innerText = `😴 Ociosos: ${ociosos}`;
+    document.getElementById("kpi-eficiencia").innerText = `💼 Eficientes: ${eficientes}`;
+}
+
+function gerarGraficoAlertas() {
+    const acaoSelecionada = document.getElementById('acaoGrafico').value;
+    const contagem = {};
+
+    dadosBrutos.forEach(e => {
+        const nome = e.funcionario;
+        if (!contagem[nome]) contagem[nome] = 0;
+        if (e.acao === acaoSelecionada) contagem[nome]++;
+    });
+
+    const nomes = Object.keys(contagem);
+    const valores = Object.values(contagem);
+
+    const ctx = document.getElementById('graficoBarras').getContext('2d');
+    if (window.grafico) window.grafico.destroy();
+    window.grafico = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: nomes,
+            datasets: [{
+                label: `${acaoSelecionada} por funcionário`,
+                data: valores,
+                backgroundColor: '#007bff'
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+}
+
+
+    function aplicarFiltros() {
+        const funcionario = document.getElementById('filtroFuncionario').value;
+        const acao = document.getElementById('filtroAcao').value;
+        const horaFiltro = document.getElementById('filtroHora').value;
+
+        const area = document.getElementById('alertas');
+        area.innerHTML = '';
+
+        dadosBrutos.forEach(evento => {
+            const hora = extrairHora(evento.timestamp);
+
+            if (
+                (funcionario === "" || evento.funcionario === funcionario) &&
+                (acao === "" || evento.acao === acao) &&
+                (horaFiltro === "" || hora === horaFiltro)
+            ) {
+                area.innerHTML += `
+                    <div style="margin:10px; padding:10px; background:#fff; border-left:5px solid #007bff;">
+                        <strong>${evento.funcionario}</strong> — ${evento.acao}<br>
+                        <small>${evento.timestamp}</small> | Duração: ${evento.duracao} seg
+                        <br><button onclick="confirmarAlerta(${evento.id})">Confirmar</button>
+                    </div>
+                `;
+            }
+        });
+        atualizarIndicadores();
+        gerarGraficoAlertas();
+        gerarGraficoPizza();
+        gerarGraficoLinha();
+        gerarGraficoEmpilhado();
+        gerarGraficoRadar();
+        gerarGraficoTemporal();
+        gerarGraficoAreaEmpilhada();
+        gerarGraficoPareto();
+     // gerarGraficoDispersao();
+
+
+
+
+
+
+
+
+    }
+
+    function confirmarAlerta(id) {
+        fetch(`/confirmar/${id}`, { method: 'POST' })
+            .then(res => res.text())
+            .then(msg => {
+                alert(msg);
+                atualizarDados();  // atualiza sem apagar filtros
+            });
+    }
+
+<script>
+window.onload = () => {
+    carregarDados();                   // carrega dados e gráficos ao abrir
+    setInterval(atualizarDados, 5000); // atualiza dados a cada 5 segundos
+
+    document.getElementById('filtroFuncionario').addEventListener('change', aplicarFiltros);
+    document.getElementById('filtroAcao').addEventListener('change', aplicarFiltros);
+    document.getElementById('filtroHora').addEventListener('change', aplicarFiltros);
+    document.getElementById('acaoGrafico').addEventListener('change', gerarGraficoAlertas);
+
+
+
+    
+
+</script>
+
+<script>
+
+function carregarDados() {
+        fetch('/dados')
+            .then(response => response.json())
+            .then(data => {
+                dadosBrutos = data;
+                atualizarFiltros(data);   // preenche filtros só uma vez
+                aplicarFiltros();         // atualiza com filtros ativos
+            });
+    }
+
+
+
+
+
+
+    // 🔧 Teste para garantir que o painel está iniciando corretamente
+
+<script>
+    function aplicarFiltros() {
+        gerarGraficoAlertas();
+        gerarGraficoPizza();
+        gerarGraficoLinha();
+        gerarGraficoEmpilhado();
+        gerarGraficoRadar();
+        gerarGraficoTemporal();
+        gerarGraficoAreaEmpilhada();
+        gerarGraficoPareto();
+        // gerarGraficoDispersao(); ← comente se estiver dando erro
+    }
+
+    window.onload = () => {
+        console.log("✅ Painel carregado corretamente");
+
+        carregarDados(); // chama os dados da API
+        // setInterval(atualizarDados, 5000); ← comentado por enquanto
+
+        document.getElementById('filtroFuncionario').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroAcao').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroHora').addEventListener('change', aplicarFiltros);
+        document.getElementById('acaoGrafico').addEventListener('change', gerarGraficoAlertas);
+    };
+</script>
+</body>
+</html>
