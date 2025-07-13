@@ -3,13 +3,7 @@ from supabase_client import obter_eventos_recentes
 
 app = Flask(__name__)
 
-
-@app.route("/confirmar/<id>", methods=["POST"])
-def confirmar(id):
-    print(f"Alerta confirmado: {id}")
-    return f"Alerta {id} confirmado com sucesso!"
-
-@app.route("/")
+@app.route('/')
 def painel():
     eventos = obter_eventos_recentes()
     return render_template("painel.html", eventos=eventos)
