@@ -19,5 +19,9 @@ def dados_em_json():
     eventos = obter_eventos_recentes()
     return jsonify(eventos)
 
+@app.route("/")
+def index():
+    return render_template("painel.html")
+
 if __name__ == '__main__':
     app.run(debug=True)
